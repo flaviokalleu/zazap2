@@ -8,7 +8,7 @@ import { IConnections, INodes } from "../../WebhookService/DispatchWebHookServic
 import { getAccessToken, sendAttachmentFromUrl, sendText, showTypingIndicator } from "../graphAPI";
 import formatBody from "../../../helpers/Mustache";
 import axios from "axios";
-import fs, { stat } from "fs";
+import fs from "fs";
 import { sendFacebookMessageMedia } from "../sendFacebookMessageMedia";
 import mime from "mime";
 import path from "path";
@@ -21,7 +21,6 @@ import ShowQueueService from "../../QueueService/ShowQueueService";
 import ffmpeg from "fluent-ffmpeg";
 import { fi } from "date-fns/locale";
 import queue from "../../../libs/queue";
-import { is } from "bluebird";
 const os = require("os");
 
 let ffmpegPath;
@@ -68,7 +67,6 @@ export const ActionsWebhookFacebookService = async (
     numberPhrase?: NumberPhrase
 ): Promise<string> => {
 
-
     const io = getIO()
     let next = nextStage;
     let createFieldJsonName = "";
@@ -110,8 +108,6 @@ export const ActionsWebhookFacebookService = async (
 
     let selectedQueueid = null;
 
-    let stopFlow = false;
-
     for (var i = 0; i < lengthLoop; i++) {
         let nodeSelected: any;
         let ticketInit: Ticket;
@@ -119,9 +115,8 @@ export const ActionsWebhookFacebookService = async (
             ticketInit = await Ticket.findOne({
                 where: { id: idTicket }
             });
-            console.log(132, "ActionsWebhookFacebookService", ticketInit)
             if (ticketInit.status === "closed") {
-                break;
+               break
             } else {
                 await ticketInit.update({
                     dataWebhook: {
@@ -130,7 +125,6 @@ export const ActionsWebhookFacebookService = async (
                 })
             }
         }
-
         if (pressKey) {
             if (pressKey === "parar") {
                 if (idTicket) {
@@ -167,7 +161,8 @@ export const ActionsWebhookFacebookService = async (
             console.log("====================================")
 
             selectedQueueid = queue.id;
-            await updateQueueId(ticket, companyId, queue.id)
+            console.log({ selectedQueueid })
+            //await updateQueueId(ticket, companyId, queue.id)
 
         }
 
@@ -176,56 +171,6 @@ export const ActionsWebhookFacebookService = async (
             for (var iLoc = 0; iLoc < nodeSelected.data.seq.length; iLoc++) {
                 const elementNowSelected = nodeSelected.data.seq[iLoc];
                 console.log(elementNowSelected, "elementNowSelected")
-      
-                let ticketUpdate = await Ticket.findOne({
-                    where: { id: idTicket, companyId }
-                });
-
-                if (ticketUpdate.status === "open") {
-
-                    pressKey = "999";
-                    execFn = undefined;
-
-
-                    await ticket.update({
-                        lastFlowId: null,
-                        dataWebhook: null,
-                        queueId: null,
-                        hashFlowId: null,
-                        flowWebhook: false,
-                        flowStopped: null
-                    });
-                    break;
-                }
-
-                if (ticketUpdate.status === "closed") {
-
-                    pressKey = "999";
-                    execFn = undefined;
-
-                    await ticket.update({
-                        status: "closed",
-                        lastFlowId: null,
-                        dataWebhook: null,
-                        queueId: null,
-                        hashFlowId: null,
-                        flowWebhook: false,
-                        flowStopped: null
-                    });
-
-                    await ticket.reload();
-
-                    io.of(String(companyId))
-                        // .to(oldStatus)
-                        // .to(ticketId.toString())
-                        .emit(`company-${ticket.companyId}-ticket`, {
-                            action: "delete",
-                            ticketId: ticket.id
-                        });
-
-
-                    break;
-                }
 
                 if (elementNowSelected.includes("message")) {
                     // await SendMessageFlow(whatsapp, {
@@ -237,31 +182,6 @@ export const ActionsWebhookFacebookService = async (
                     const bodyFor = nodeSelected.data.elements.filter(
                         item => item.number === elementNowSelected
                     )[0].value;
-
-                    if (ticketUpdate.status === "closed") {
-                        await ticket.update({
-                            status: "closed",
-                            lastFlowId: null,
-                            dataWebhook: null,
-                            queueId: null,
-                            hashFlowId: null,
-                            flowWebhook: false,
-                            flowStopped: null
-                        });
-
-                        await ticket.reload();
-
-                        io.of(String(companyId))
-                            // .to(oldStatus)
-                            // .to(ticketId.toString())
-                            .emit(`company-${ticket.companyId}-ticket`, {
-                                action: "delete",
-                                ticketId: ticket.id
-                            });
-
-
-                        break;
-                    }
 
                     const ticketDetails = await ShowTicketService(ticket.id, companyId);
 
@@ -283,21 +203,16 @@ export const ActionsWebhookFacebookService = async (
 
                     await intervalWhats("5");
 
-
                     const sentMessage = await sendText(
                         contact.number,
                         bodyBot,
                         getSession.facebookUserToken);
 
-
-
-                    const currentQueue = selectedQueueid ? selectedQueueid : ticket.queueId;
-
                     await ticketDetails.update({
-                        lastMessage: formatBody(bodyFor, ticket.contact),
-                        queueId: currentQueue
+                        lastMessage: formatBody(bodyFor, ticket.contact)
                     });
 
+                    await updateQueueId(ticket, companyId, selectedQueueid)
 
                     await intervalWhats("1");
 
@@ -320,7 +235,6 @@ export const ActionsWebhookFacebookService = async (
 
 
                 if (elementNowSelected.includes("img")) {
-
                     const mediaPath = process.env.BACKEND_URL === "http://localhost:8090"
                         ? `${__dirname.split("src")[0].split("\\").join("/")}public/${nodeSelected.data.elements.filter(
                             item => item.number === elementNowSelected
@@ -356,8 +270,6 @@ export const ActionsWebhookFacebookService = async (
 
                     await intervalWhats("5");
 
-                    const currentQueue = selectedQueueid ? selectedQueueid : ticket.queueId;
-
                     const sendMessage = await sendAttachmentFromUrl(
                         contact.number,
                         domain,
@@ -368,8 +280,7 @@ export const ActionsWebhookFacebookService = async (
                     const ticketDetails = await ShowTicketService(ticket.id, companyId);
 
                     await ticketDetails.update({
-                        lastMessage: formatBody(`${fileNameWithoutExtension}${fileExtension}`, ticket.contact),
-                        queueId: currentQueue
+                        lastMessage: formatBody(`${fileNameWithoutExtension}${fileExtension}`, ticket.contact)
                     });
 
                     await showTypingIndicator(
@@ -382,7 +293,6 @@ export const ActionsWebhookFacebookService = async (
 
 
                 if (elementNowSelected.includes("audio")) {
-
                     const mediaDirectory =
                         process.env.BACKEND_URL === "http://localhost:8090"
                             ? `${__dirname.split("src")[0].split("\\").join("/")}public/${nodeSelected.data.elements.filter(
@@ -435,11 +345,8 @@ export const ActionsWebhookFacebookService = async (
 
                     const ticketDetails = await ShowTicketService(ticket.id, companyId);
 
-                    const currentQueue = selectedQueueid ? selectedQueueid : ticket.queueId;
-
                     await ticketDetails.update({
-                        lastMessage: formatBody(`${fileNameWithoutExtension}${fileExtension}`, ticket.contact),
-                        queueId: currentQueue
+                        lastMessage: formatBody(`${fileNameWithoutExtension}${fileExtension}`, ticket.contact)
                     });
 
                     await showTypingIndicator(
@@ -452,7 +359,6 @@ export const ActionsWebhookFacebookService = async (
 
 
                 if (elementNowSelected.includes("video")) {
-
                     const mediaDirectory =
                         process.env.BACKEND_URL === "http://localhost:8090"
                             ? `${__dirname.split("src")[0].split("\\").join("/")}public/${nodeSelected.data.elements.filter(
@@ -496,11 +402,8 @@ export const ActionsWebhookFacebookService = async (
 
                     const ticketDetails = await ShowTicketService(ticket.id, companyId);
 
-                    const currentQueue = selectedQueueid ? selectedQueueid : ticket.queueId;
-
                     await ticketDetails.update({
-                        lastMessage: formatBody(`${fileNameWithoutExtension}${fileExtension}`, ticket.contact),
-                        queueId: currentQueue
+                        lastMessage: formatBody(`${fileNameWithoutExtension}${fileExtension}`, ticket.contact)
                     });
 
                     await showTypingIndicator(
@@ -514,7 +417,6 @@ export const ActionsWebhookFacebookService = async (
         }
 
         if (nodeSelected.type === "img") {
-
             const mediaPath = process.env.BACKEND_URL === "http://localhost:8090"
                 ? `${__dirname.split("src")[0].split("\\").join("/")}public/${nodeSelected.data.url
                 }`
@@ -554,11 +456,8 @@ export const ActionsWebhookFacebookService = async (
 
             const ticketDetails = await ShowTicketService(ticket.id, companyId);
 
-            const currentQueue = selectedQueueid ? selectedQueueid : ticket.queueId;
-
             await ticketDetails.update({
-                lastMessage: formatBody(`${fileNameWithoutExtension}${fileExtension}`, ticket.contact),
-                queueId: currentQueue
+                lastMessage: formatBody(`${fileNameWithoutExtension}${fileExtension}`, ticket.contact)
             });
 
             await showTypingIndicator(
@@ -569,7 +468,6 @@ export const ActionsWebhookFacebookService = async (
         }
 
         if (nodeSelected.type === "audio") {
-
             const mediaDirectory =
                 process.env.BACKEND_URL === "http://localhost:8090"
                     ? `${__dirname.split("src")[0].split("\\").join("/")}public/${nodeSelected.data.url
@@ -602,10 +500,8 @@ export const ActionsWebhookFacebookService = async (
 
             const ticketDetails = await ShowTicketService(ticket.id, companyId);
 
-            const currentQueue = selectedQueueid ? selectedQueueid : ticket.queueId;
             await ticketDetails.update({
-                lastMessage: formatBody(`${fileNameWithoutExtension}${fileExtension}`, ticket.contact),
-                queueId: currentQueue
+                lastMessage: formatBody(`${fileNameWithoutExtension}${fileExtension}`, ticket.contact)
             });
 
             await intervalWhats("1");
@@ -614,7 +510,6 @@ export const ActionsWebhookFacebookService = async (
             await intervalWhats(nodeSelected.data.sec);
         }
         if (nodeSelected.type === "video") {
-
             const mediaDirectory =
                 process.env.BACKEND_URL === "http://localhost:8090"
                     ? `${__dirname.split("src")[0].split("\\").join("/")}public/${nodeSelected.data.url
@@ -654,11 +549,8 @@ export const ActionsWebhookFacebookService = async (
 
             const ticketDetails = await ShowTicketService(ticket.id, companyId);
 
-            const currentQueue = selectedQueueid ? selectedQueueid : ticket.queueId;
-
             await ticketDetails.update({
                 lastMessage: formatBody(`${fileNameWithoutExtension}${fileExtension}`, ticket.contact),
-                queueId: currentQueue
             });
 
             await showTypingIndicator(
@@ -688,7 +580,6 @@ export const ActionsWebhookFacebookService = async (
         let isMenu: boolean;
 
         if (nodeSelected.type === "menu") {
-
             if (pressKey) {
 
                 const filterOne = connectStatic.filter(confil => confil.source === next)
@@ -740,8 +631,7 @@ export const ActionsWebhookFacebookService = async (
 
 
                 await ticketDetails.update({
-                    lastMessage: formatBody(menuCreate, ticket.contact),
-                    queueId: selectedQueueid
+                    lastMessage: formatBody(menuCreate, ticket.contact)
                 });
 
                 const contact = await Contact.findOne({
@@ -770,16 +660,14 @@ export const ActionsWebhookFacebookService = async (
                     "typing_off"
                 );
 
-
                 ticket = await Ticket.findOne({
                     where: { id: idTicket, companyId: companyId }
                 });
 
 
-                const currentQueue = selectedQueueid ? selectedQueueid : ticket.queueId;
-
                 await ticket.update({
-                    queueId: currentQueue,
+                    status: "pending",
+                    queueId: ticket.queueId ? ticket.queueId : null,
                     userId: null,
                     companyId: companyId,
                     flowWebhook: true,
@@ -788,7 +676,6 @@ export const ActionsWebhookFacebookService = async (
                     hashFlowId: hashWebhookId,
                     flowStopped: idFlowDb.toString()
                 });
-
 
                 break;
             }
@@ -803,6 +690,8 @@ export const ActionsWebhookFacebookService = async (
                 next = "";
             } else {
                 if (!noAlterNext) {
+                    await ticket.reload();
+
                     next = result.target;
                 }
             }
@@ -837,32 +726,6 @@ export const ActionsWebhookFacebookService = async (
                 connect => connect.source === nodeSelected.id
             ).length;
             console.log(530, "ActionsWebhookFacebookService")
-
-            const ticket = await Ticket.findOne({
-                where: { id: idTicket, companyId: companyId }
-            });
-
-            if (ticket.status === "closed") {
-                await ticket.update({
-                    status: "interrupted",
-                    lastFlowId: null,
-                    dataWebhook: null,
-                    queueId: null,
-                    hashFlowId: null,
-                    flowWebhook: false,
-                    flowStopped: null
-                });
-                io.of(String(companyId))
-                    // .to(oldStatus)
-                    // .to(ticketId.toString())
-                    .emit(`company-${ticket.companyId}-ticket`, {
-                        action: "delete",
-                        ticketId: ticket.id
-                    });
-
-            }
-
-
             if (nextNode === 0) {
                 console.log(532, "ActionsWebhookFacebookService")
 
@@ -870,15 +733,12 @@ export const ActionsWebhookFacebookService = async (
                     where: { id: idTicket, companyId: companyId }
                 });
 
-                const currentQueue = selectedQueueid ? selectedQueueid : ticket.queueId;
-
-
                 await ticket.update({
-                    queueId: currentQueue,
                     lastFlowId: null,
                     dataWebhook: {
                         status: "process",
                     },
+                    queueId: ticket.queueId ? ticket.queueId : null,
                     hashFlowId: null,
                     flowWebhook: false,
                     flowStopped: idFlowDb.toString()
@@ -901,22 +761,8 @@ export const ActionsWebhookFacebookService = async (
             where: { id: idTicket, companyId: companyId }
         });
 
-
-        if (ticket.status === "closed") {
-            io.of(String(companyId))
-                // .to(oldStatus)
-                // .to(ticketId.toString())
-                .emit(`company-${ticket.companyId}-ticket`, {
-                    action: "delete",
-                    ticketId: ticket.id
-                });
-
-        }
-
-
-        const currentQueue = selectedQueueid ? selectedQueueid : ticket.queueId;
         await ticket.update({
-            queueId: currentQueue,
+            queueId: null,
             userId: null,
             companyId: companyId,
             flowWebhook: true,
@@ -929,7 +775,6 @@ export const ActionsWebhookFacebookService = async (
         noAlterNext = false;
         execCount++;
     }
-
 
     return "ds";
 };
@@ -999,6 +844,7 @@ const replaceMessages = (
 
 async function updateQueueId(ticket: Ticket, companyId: number, queueId: number) {
     await ticket.update({
+        status: 'pending',
         queueId: queueId,
         userId: ticket.userId,
         companyId: companyId,
@@ -1015,7 +861,8 @@ async function updateQueueId(ticket: Ticket, companyId: number, queueId: number)
 
     await UpdateTicketService({
         ticketData: {
-            queueId: queueId
+            status: "pending",
+            queueId: queueId 
         },
         ticketId: ticket.id,
         companyId
@@ -1029,24 +876,6 @@ async function updateQueueId(ticket: Ticket, companyId: number, queueId: number)
     });
 
 }
-
-async function ticketClosedStopFlow(idTicket: number, companyId: number) {
-    const ticketUpdate = await Ticket.findOne({
-        where: { id: idTicket, companyId }
-    });
-
-    await ticketUpdate.update({
-        lastFlowId: null,
-        dataWebhook: null,
-        queueId: null,
-        hashFlowId: null,
-        flowWebhook: false,
-        flowStopped: null
-    });
-
-    return ticketUpdate.status === "closed";
-}
-
 
 function convertAudio(inputFile: string): Promise<string> {
     let outputFile: string;

@@ -39,11 +39,6 @@ import { get } from "http";
 import { WebhookModel } from "../../models/Webhook";
 import { is } from "bluebird";
 import ShowTicketService from "../TicketServices/ShowTicketService";
-import { getIO } from "../../libs/socket";
-import { ca } from "date-fns/locale";
-import queue from "../../libs/queue";
-import { FlowCampaignModel } from "../../models/FlowCampaign";
-
 
 interface IMe {
   name: string;
@@ -110,35 +105,6 @@ const verifyContact = async (msgContact: any, token: any, companyId: any) => {
   return contact;
 };
 
-const downloadMedia = async (url: string, companyId: number) => {
-
-  const { data } = await axios.get(url, {
-    responseType: "arraybuffer"
-  });
-
-  // eslint-disable-next-line no-eval
-  const { fileTypeFromBuffer } = await (eval('import("file-type")') as Promise<typeof import("file-type")>);
-
-  const type = await fileTypeFromBuffer(data);
-
-  const fileName = `${new Date().getTime()}.${type.ext}`;
-
-  const folder = `public/company${companyId}`;
-  if (!fs.existsSync(folder)) {
-    fs.mkdirSync(folder);
-    fs.chmodSync(folder, 0o777)
-  }
-
-  writeFileSync(
-    join(__dirname, "..", "..", "..", folder, fileName),
-    data,
-    "base64"
-  );
-
-  return fileName;
-}
-
-
 export const verifyMessageFace = async (
   msg: any,
   body: any,
@@ -146,52 +112,21 @@ export const verifyMessageFace = async (
   contact: Contact,
   fromMe: boolean = false
 ) => {
+  const quotedMsg = await verifyQuotedMessage(msg);
+  const messageData = {
+    wid: msg.mid || msg.message_id,
+    ticketId: ticket.id,
+    contactId: fromMe ? undefined : msg.is_echo ? undefined : contact.id,
+    body: msg.text || body,
+    fromMe: fromMe ? fromMe : msg.is_echo ? true : false,
+    read: fromMe ? fromMe : msg.is_echo,
+    quotedMsgId: quotedMsg?.id,
+    ack: 3,
+    dataJson: JSON.stringify(msg),
+    channel: ticket.channel
+  };
 
-  let fileName = null;
-  try {
-    fileName = await downloadMedia(msg.attachments[0].payload.url, ticket.companyId);
-  } catch (e) {
-    console.log(e)
-  }
-
-  if (fileName) {
-
-    const messageData = {
-      wid: msg.mid,
-      ticketId: ticket.id,
-      contactId: fromMe ? undefined : msg.is_echo ? undefined : contact.id,
-      body: msg.text || fileName,
-      fromMe: fromMe ? fromMe : msg.is_echo ? true : false,
-      mediaType: msg.attachments[0].type,
-      mediaUrl: fileName,
-      read: fromMe ? fromMe : msg.is_echo,
-      quotedMsgId: null,
-      ack: 3,
-      dataJson: JSON.stringify(msg),
-      channel: ticket.channel
-    };
-
-    await CreateMessageService({ messageData, companyId: ticket.companyId });
-  } else {
-
-    const quotedMsg = await verifyQuotedMessage(msg);
-    const messageData = {
-      wid: msg.mid || msg.message_id,
-      ticketId: ticket.id,
-      contactId: fromMe ? undefined : msg.is_echo ? undefined : contact.id,
-      body: msg.text || body,
-      fromMe: fromMe ? fromMe : msg.is_echo ? true : false,
-      read: fromMe ? fromMe : msg.is_echo,
-      quotedMsgId: quotedMsg?.id,
-      ack: 3,
-      dataJson: JSON.stringify(msg),
-      channel: ticket.channel
-    };
-
-    await CreateMessageService({ messageData, companyId: ticket.companyId });
-
-  }
-
+  await CreateMessageService({ messageData, companyId: ticket.companyId });
 
   // await ticket.update({
   //   lastMessage: msg.text
@@ -204,13 +139,9 @@ export const verifyMessageMedia = async (
   contact: Contact,
   fromMe: boolean = false
 ): Promise<void> => {
-
-  console.log(149, "verifyMessageMedia")
-
   const { data } = await axios.get(msg.attachments[0].payload.url, {
     responseType: "arraybuffer"
   });
-
 
   // eslint-disable-next-line no-eval
   const { fileTypeFromBuffer } = await (eval('import("file-type")') as Promise<typeof import("file-type")>);
@@ -248,8 +179,10 @@ export const verifyMessageMedia = async (
 
   await CreateMessageService({ messageData, companyId: ticket.companyId });
 
-}
-
+  // await ticket.update({
+  //   lastMessage: msg.text
+  // });
+};
 
 export const verifyQuotedMessage = async (msg: any): Promise<Message | null> => {
   if (!msg) return null;
@@ -276,9 +209,6 @@ const flowBuilderQueue = async (
   isFirstMsg: Ticket,
 ) => {
 
-
-  const io = getIO()
-
   const flow = await FlowBuilderModel.findOne({
     where: {
       id: ticket.flowStopped,
@@ -300,14 +230,10 @@ const flowBuilderQueue = async (
   const nodes: INodes[] = flow.flow["nodes"]
   const connections: IConnections[] = flow.flow["connections"]
 
-  if (!ticket.lastFlowId && ticket.fromMe) {
+  if (!ticket.lastFlowId) {
     return
   }
 
-
-  if (ticket.status === "closed" || ticket.status === "interrupted") {
-    return;
-  }
 
   if (ticket.flowWebhook) {
     await ActionsWebhookFacebookService(
@@ -349,21 +275,13 @@ const flowbuilderIntegration = async (
   console.log("======================================")
 
 
-
   await ticket.update({
     lastMessage: message.text,
   });
 
-  const listPhrase = await FlowCampaignModel.findAll({
-    where: {
-      whatsappId: getSession.id,
-    }
-  });
-
 
   if (
-    !isFirstMsg &&
-    listPhrase.filter(item => item.phrase === message.text).length === 0
+    !isFirstMsg
   ) {
 
     const flow = await FlowBuilderModel.findOne({
@@ -411,7 +329,6 @@ const flowbuilderIntegration = async (
   if (
     !ticket.fromMe &&
     isFirstMsg &&
-    listPhrase.filter(item => item.phrase === message.text).length === 0 &&
     diferencaEmMilissegundos >= seisHorasEmMilissegundos
   ) {
     const flow = await FlowBuilderModel.findOne({
@@ -450,65 +367,120 @@ const flowbuilderIntegration = async (
 
   }
 
-  // Campaign fluxo
-  if (listPhrase.filter(item => item.phrase === message.text).length !== 0) {
 
-
-    const flowDispar = listPhrase.filter(item => item.phrase === message.text)[0];
-    const flow = await FlowBuilderModel.findOne({
+  /*
+  if (ticketUpdate.flowWebhook) {
+    const webhook = await WebhookModel.findOne({
       where: {
-        id: flowDispar.flowId
+        company_id: ticketUpdate.companyId,
+        hash_id: ticketUpdate.hashFlowId
       }
     });
-    const nodes: INodes[] = flow.flow["nodes"];
-    const connections: IConnections[] = flow.flow["connections"];
 
-    const mountDataContact = {
-      number: contact.number,
-      name: contact.name,
-      email: contact.email
-    };
+    if (webhook && webhook.config["details"]) {
+      const flow = await FlowBuilderModel.findOne({
+        where: {
+          id: webhook.config["details"].idFlow
+        }
+      });
+      const nodes: INodes[] = flow.flow["nodes"];
+      const connections: IConnections[] = flow.flow["connections"];
 
-    //const worker = new Worker("./src/services/WebhookService/WorkerAction.ts");
+      // const worker = new Worker("./src/services/WebhookService/WorkerAction.ts");
 
-    //console.log('DISPARO3')
-    // Enviar as variáveis como parte da mensagem para o Worker
-    // const data = {
-    //   idFlowDb: flowDispar.flowId,
-    //   companyId: ticketUpdate.companyId,
-    //   nodes: nodes,
-    //   connects: connections,
-    //   nextStage: flow.flow["nodes"][0].id,
-    //   dataWebhook: null,
-    //   details: "",
-    //   hashWebhookId: "",
-    //   pressKey: null,
-    //   idTicket: ticketUpdate.id,
-    //   numberPhrase: mountDataContact
-    // };
-    // worker.postMessage(data);
+      // console.log('DISPARO4')
+      // // Enviar as variáveis como parte da mensagem para o Worker
+      // const data = {
+      //   idFlowDb: webhook.config["details"].idFlow,
+      //   companyId: ticketUpdate.companyId,
+      //   nodes: nodes,
+      //   connects: connections,
+      //   nextStage: ticketUpdate.lastFlowId,
+      //   dataWebhook: ticketUpdate.dataWebhook,
+      //   details: webhook.config["details"],
+      //   hashWebhookId: ticketUpdate.hashFlowId,
+      //   pressKey: body,
+      //   idTicket: ticketUpdate.id,
+      //   numberPhrase: ""
+      // };
+      // worker.postMessage(data);
 
-    // worker.on("message", message => {
-    //   console.log(`Mensagem do worker: ${message}`);
-    // });
+      // worker.on("message", message => {
+      //   console.log(`Mensagem do worker: ${message}`);
+      // });
 
-    await ActionsWebhookFacebookService(
-      getSession,
-      flowDispar.flowId,
-      ticket.companyId,
-      nodes,
-      connections,
-      flow.flow["nodes"][0].id,
-      null,
-      "",
-      "",
-      null,
-      ticket.id,
-      mountDataContact
-    );
-    return
+      await ActionsWebhookFacebookService(
+        getSession,
+        webhook.config["details"].idFlow,
+        ticketUpdate.companyId,
+        nodes,
+        connections,
+        ticketUpdate.lastFlowId,
+        ticketUpdate.dataWebhook,
+        webhook.config["details"],
+        ticketUpdate.hashFlowId,
+        message.text,
+        ticketUpdate.id
+      );
+    } else {
+      const flow = await FlowBuilderModel.findOne({
+        where: {
+          id: ticketUpdate.flowStopped
+        }
+      });
+
+      const nodes: INodes[] = flow.flow["nodes"];
+      const connections: IConnections[] = flow.flow["connections"];
+
+      if (!ticketUpdate.lastFlowId) {
+        return
+      }
+
+      const mountDataContact = {
+        number: contact.number,
+        name: contact.name,
+        email: contact.email
+      };
+
+      // const worker = new Worker("./src/services/WebhookService/WorkerAction.ts");
+
+      // console.log('DISPARO5')
+      // // Enviar as variáveis como parte da mensagem para o Worker
+      // const data = {
+      //   idFlowDb: parseInt(ticketUpdate.flowStopped),
+      //   companyId: ticketUpdate.companyId,
+      //   nodes: nodes,
+      //   connects: connections,
+      //   nextStage: ticketUpdate.lastFlowId,
+      //   dataWebhook: null,
+      //   details: "",
+      //   hashWebhookId: "",
+      //   pressKey: body,
+      //   idTicket: ticketUpdate.id,
+      //   numberPhrase: mountDataContact
+      // };
+      // worker.postMessage(data);
+      // worker.on("message", message => {
+      //   console.log(`Mensagem do worker: ${message}`);
+      // });
+
+      await ActionsWebhookFacebookService(
+        getSession,
+        parseInt(ticketUpdate.flowStopped),
+        ticketUpdate.companyId,
+        nodes,
+        connections,
+        ticketUpdate.lastFlowId,
+        null,
+        "",
+        "",
+        message.text,
+        ticketUpdate.id,
+        mountDataContact
+      );
+    }
   }
-
+  */
 }
 
 export const handleMessage = async (
@@ -528,7 +500,6 @@ export const handleMessage = async (
 
       let bodyMessage = message.text;
 
-      console.log(JSON.stringify(message, null, 2));
       if (fromMe) {
         if (/\u200e/.test(bodyMessage)) return;
 
@@ -642,7 +613,6 @@ export const handleMessage = async (
         return;
 
       if (rollbackTag && formatBody(bodyNextTag, ticket) !== bodyMessage && formatBody(bodyRollbackTag, ticket) !== bodyMessage) {
-        console.log(626, "facebookMessageListener")
         await TicketTag.destroy({ where: { ticketId: ticket.id, tagId: ticketTag.tagId } });
         await TicketTag.create({ ticketId: ticket.id, tagId: rollbackTag.id });
       }
@@ -651,14 +621,13 @@ export const handleMessage = async (
         lastMessage: message.text
       });
 
-
       try {
         if (!fromMe) {
           /**
            * Tratamento para avaliação do atendente
            */
           if (ticket.status === "nps" && ticketTraking !== null && verifyRating(ticketTraking)) {
-            console.log(642, "facebookMessageListener")
+
             if (!isNaN(parseFloat(bodyMessage))) {
 
               handleRating(parseFloat(bodyMessage), ticket, ticketTraking);
@@ -672,7 +641,6 @@ export const handleMessage = async (
               return;
             } else {
 
-              console.log(656, "facebookMessageListener")
               if (ticket.amountUsedBotQueuesNPS < getSession.maxUseBotQueuesNPS) {
                 let bodyErrorRating = `\u200eOpção inválida, tente novamente.\n`;
                 const sentMessage = await sendText(
@@ -682,7 +650,7 @@ export const handleMessage = async (
                 );
 
                 await verifyMessageFace(sentMessage, bodyErrorRating, ticket, contact);
-                console.log(666, "facebookMessageListener")
+
 
                 // await delay(1000);
 
@@ -701,39 +669,12 @@ export const handleMessage = async (
 
           }
 
-          /*
-          if (ticket.status === "open") {
-            await ticket.update({
-              lastFlowId: null,
-              dataWebhook: null,
-              hashFlowId: null,
-              flowWebhook: false,
-              flowStopped: null
-            });
-          }
-          */
-
-          // FLOW BUILDER INTERROMPIDO
-          if (ticket.status === "interrupted") {
-            const io = getIO()
-
-            io.of(String(companyId))
-              // .to(oldStatus)
-              // .to(ticketId.toString())
-              .emit(`company-${ticket.companyId}-ticket`, {
-                action: "delete",
-                ticketId: ticket.id
-              });
-          }
           const enableLGPD = settings.enableLGPD === "enabled";
 
           //TRATAMENTO LGPD
           if (enableLGPD && ticket.status === "lgpd") {
-            console.log(712, "facebookMessageListener")
             if (isNil(ticket.lgpdAcceptedAt) && !isNil(ticket.lgpdSendMessageAt)) {
               let choosenOption: number | null = null;
-
-              console.log(716, "facebookMessageListener")
 
               if (!isNaN(parseFloat(bodyMessage))) {
                 choosenOption = parseFloat(bodyMessage);
@@ -775,7 +716,6 @@ export const handleMessage = async (
                   //se digitou qualquer opção que não seja 1 ou 2 limpa o lgpdSendMessageAt para 
                   //enviar de novo o bot respeitando o numero máximo de vezes que o bot é pra ser enviado
                 } else {
-                  console.log(758, "facebookMessageListener")
                   if (ticket.amountUsedBotQueues < getSession.maxUseBotQueues) {
                     await ticket.update(
                       {
@@ -801,10 +741,7 @@ export const handleMessage = async (
               !contact.isGroup && isNil(ticket.lgpdSendMessageAt) &&
               ticket.amountUsedBotQueues <= getSession.maxUseBotQueues && !isNil(settings?.lgpdMessage)
             ) {
-
-              console.log(785, "facebookMessageListener")
-
-              if (message?.attachments) {
+              if (message.attachments) {
                 await verifyMessageMedia(message, ticket, contact);
               } else {
                 await verifyMessageFace(message, message.text, ticket, contact);
@@ -812,8 +749,6 @@ export const handleMessage = async (
 
               if (!isNil(settings?.lgpdMessage) && settings.lgpdMessage !== "") {
                 const bodyMessageLGPD = formatBody(`\u200e${settings.lgpdMessage}`, ticket);
-
-                console.log(796, "facebookMessageListener")
 
                 const sentMessage = await sendText(
                   contact.number,
@@ -852,8 +787,6 @@ export const handleMessage = async (
 
               await verifyMessageFace(sentMessageBot, bodyBot, ticket, contact);
 
-              console.log(835, "facebookMessageListener")
-
               await ticket.update({
                 lgpdSendMessageAt: moment().toDate(),
                 amountUsedBotQueues: ticket.amountUsedBotQueues + 1
@@ -874,21 +807,12 @@ export const handleMessage = async (
         console.log(e);
       }
 
-      if (ticket.channel === "facebook" || ticket.channel === "instagram") {
-        await verifyMessageFace(message, message.text, ticket, contact);
-      } else if (message.attachments) {
-        await verifyMessageMedia(message, ticket, contact);
-      }
-      /*
       if (message.attachments) {
-        console.log(856, "facebookMessageListener")
         await verifyMessageMedia(message, ticket, contact);
       } else {
-     
-      }*/
+        await verifyMessageFace(message, message.text, ticket, contact);
+      }
 
-
-      const io = getIO()
 
       const flow = await FlowBuilderModel.findOne({
         where: {
@@ -907,16 +831,16 @@ export const handleMessage = async (
       if (
         !ticket.fromMe &&
         isMenu &&
-        (ticket.status !== "open" && ticket.status !== "closed") &&
         !isNaN(message.text)
       ) {
 
-        if (ticket.status === "closed") {
-          return
-        }
+        await ticket.update({
+          queueId: ticket.queueId ? ticket.queueId : null,
+        });
 
         await flowBuilderQueue(ticket, message, getSession, companyId, contact, isFirstMsg)
       }
+
 
 
       if (
@@ -936,6 +860,7 @@ export const handleMessage = async (
 
         if (integrations.type === "flowbuilder") {
           await ticket.update({
+            queueId: ticket.queueId ? ticket.queueId : null,
             dataWebhook: {
               status: "process",
             },

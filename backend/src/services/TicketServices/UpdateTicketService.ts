@@ -85,6 +85,8 @@ const UpdateTicketService = async ({
 
     let ticket = await ShowTicketService(ticketId, companyId);
 
+
+
     if (ticket.channel === "whatsapp" && ticket.whatsappId) {
       SetTicketMessagesAsRead(ticket);
     }
@@ -149,7 +151,7 @@ const UpdateTicketService = async ({
     );
 
     if (status !== undefined && ["closed"].indexOf(status) > -1) {
-      console.log(154, "UpdateTicketService")
+
       const _userId = ticket.userId || userId;
       let user
       if (_userId) {
@@ -160,8 +162,6 @@ const UpdateTicketService = async ({
         (sendFarewellMessage || sendFarewellMessage === undefined) &&
         (!isNil(ratingMessage) && ratingMessage !== "") &&
         !ticket.isGroup) {
-
-        console.log(166, "UpdateTicketService")
 
         if (ticketTraking.ratingAt == null) {
 
@@ -235,8 +235,6 @@ const UpdateTicketService = async ({
         (sendFarewellMessage || sendFarewellMessage === undefined)) {
 
         let body: any
-
-        console.log(240, "UpdateTicketService")
 
         if ((ticket.status !== 'pending') || (ticket.status === 'pending' && settings.sendFarewellWaitingTicket === 'enabled')) {
           if (!isNil(user) && !isNil(user?.farewellMessage) && user?.farewellMessage !== "") {
@@ -325,12 +323,7 @@ const UpdateTicketService = async ({
         let newTicketTransfer = ticket;
         if (oldQueueId !== queueId) {
           await ticket.update({
-            status: "closed",
-            lastFlowId: null,
-            dataWebhook: null,
-            queueId: null,
-            hashFlowId: null,
-            flowWebhook: false,
+            status: "closed"
           });
 
           await ticket.reload();

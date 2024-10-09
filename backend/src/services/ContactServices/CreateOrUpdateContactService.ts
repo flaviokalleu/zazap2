@@ -52,6 +52,8 @@ const downloadProfileImage = async ({
       responseType: 'arraybuffer'
     });
 
+    console.log(contact)
+
     filename = `${new Date().getTime()}.jpeg`;
     fs.writeFileSync(join(folder, filename), response.data);
 

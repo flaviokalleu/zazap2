@@ -5,7 +5,7 @@ import { getWbot } from "../../libs/wbot";
 const CheckContactNumber = async (
   number: string, companyId: number, isGroup: boolean = false
 ): Promise<string> => {
-  const wahtsappList = await GetDefaultWhatsApp(companyId);
+  const wahtsappList = await GetDefaultWhatsApp(null, companyId);
 
   const wbot = getWbot(wahtsappList.id);
 

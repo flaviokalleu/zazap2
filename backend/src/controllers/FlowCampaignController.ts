@@ -28,7 +28,6 @@ export const createFlowCampaign = async (
   const userId = parseInt(req.user.id);
   const { companyId } = req.user;
 
-  console.log(31, "FlowCampaignController", req.body)
   const flow = await CreateFlowCampaignService({
     userId,
     name,
@@ -78,11 +77,9 @@ export const updateFlowCampaign = async (
   res: Response
 ): Promise<Response> => {
   const { companyId } = req.user;
-  const { flowId, name, phrase, id, status = true, whatsappId } = req.body;
+  const { flowId, name, phrase, id, status } = req.body;
 
-  console.log(83, "FlowCampaignController", req.body)
-
-  const flow = await UpdateFlowCampaignService({ companyId, name, flowId, phrase, id, status, whatsappId });
+  const flow = await UpdateFlowCampaignService({ companyId, name, flowId, phrase, id, status });
 
   return res.status(200).json(flow);
 };

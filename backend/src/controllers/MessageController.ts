@@ -190,7 +190,7 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     return res.send();
   } catch (error) {
     console.log(error);
-    //return res.status(400).json({ error: error.message });
+    return res.status(400).json({ error: error.message });
   }
 };
 

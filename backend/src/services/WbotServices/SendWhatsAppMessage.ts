@@ -104,7 +104,7 @@ const SendWhatsAppMessage = async ({
     }
   };
   try {
-    
+    await delay(msdelay)
     const sentMessage = await wbot.sendMessage(
       number,
       {

@@ -1,4 +1,4 @@
-import { WAMessage, AnyMessageContent, delay } from "@whiskeysockets/baileys";
+import { WAMessage, AnyMessageContent } from "@whiskeysockets/baileys";
 import * as Sentry from "@sentry/node";
 import fs, { unlink, unlinkSync } from "fs";
 import { exec } from "child_process";
@@ -151,7 +151,7 @@ const SendWhatsAppMedia = async ({
   try {
     const wbot = await getWbot(ticket.whatsappId);
     const companyId = ticket.companyId.toString()
-    
+
     const pathMedia = media.path;
     const typeMessage = media.mimetype.split("/")[0];
     let options: AnyMessageContent;
@@ -166,7 +166,6 @@ const SendWhatsAppMedia = async ({
         fileName: media.originalname.replace('/', '-'),
         contextInfo: { forwardingScore: isForwarded ? 2 : 0, isForwarded: isForwarded },
       };
-      
       bodyTicket = "🎥 Arquivo de vídeo"
     } else if (typeMessage === "audio") {
       
@@ -264,10 +263,6 @@ const SendWhatsAppMedia = async ({
       number = `${contactNumber.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"
         }`;
     }
-
-
-    await wbot.sendPresenceUpdate('recording', `${contactNumber.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`);
-    await delay(500)
 
     const sentMessage = await wbot.sendMessage(
       number,

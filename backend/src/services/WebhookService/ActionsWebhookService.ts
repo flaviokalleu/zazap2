@@ -255,7 +255,8 @@ export const ActionsWebhookService = async (
       }
 
       if (nodeSelected.type === "ticket") {
-        const queue = await ShowQueueService(nodeSelected.data.data.id, companyId)
+        const queueId = nodeSelected.data?.data?.id || nodeSelected.data?.id
+        const queue = await ShowQueueService(queueId, companyId)
 
 
         await ticket.update({
@@ -521,15 +522,6 @@ export const ActionsWebhookService = async (
       let isMenu: boolean;
 
       if (nodeSelected.type === "menu") {
-
-        /*
-        if(ticket){
-          await ticket.update({
-            repeatMessage: 0
-          })
-          
-        }
-        */
 
         if (pressKey) {
 
